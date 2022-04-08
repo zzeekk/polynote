@@ -221,5 +221,4 @@ monaco.languages.registerCompletionItemProvider('sql', {
 
 document.fonts.ready.then(() => {
     monaco.editor.remeasureFonts();
-    console.log("all fonts ready");
 })
