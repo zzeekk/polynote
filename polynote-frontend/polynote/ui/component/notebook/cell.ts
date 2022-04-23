@@ -732,6 +732,7 @@ export class CodeCell extends Cell {
             },
             // TODO (overflow widgets)
             // overflowWidgetsDomNode: this.overflowDomNode
+            tabSize: 2,
         });
 
         this.editorEl.setAttribute('spellcheck', 'false');  // so code won't be spellchecked
