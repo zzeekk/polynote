@@ -537,8 +537,7 @@ abstract class Cell extends Disposable {
         }
         let hotkey = cellHotkeys[keybinding];
         if (!hotkey) hotkey = ServerStateHandler.state.customKeybindings[keybinding];
-        // TODO: remove
-        if (!hotkey && (keybinding & 255) > 0) console.log("keybinding not found", keycodeToKeybinding(keybinding));
+        if (!hotkey && (keybinding >> 8) > 0 && (keybinding & 255) > 0) console.log("keybinding not found", keycodeToKeybinding(keybinding));
         if (hotkey && (!hotkey.vimOnly || UserPreferencesHandler.state['vim'].value)) {
             const key = hotkey.key;
             const pos = this.getPosition();
