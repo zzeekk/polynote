@@ -1,4 +1,4 @@
-import {a, button, div, h2, iconButton, span, tag, TagElement} from "../tags";
+import {a, button, div, h2, iconButton, span, tag, TagElement, textbox} from "../tags";
 import {ServerMessageDispatcher} from "../../messaging/dispatcher";
 import {deepCopy, diffArray} from "../../util/helpers";
 import {Disposable, ObjectStateHandler, removeKey, StateView, UpdatePartial} from "../../state"
@@ -109,6 +109,7 @@ export class NotebookListContextMenu{
 export class NotebookList extends Disposable {
     readonly el: TagElement<"div">;
     readonly header: TagElement<"h2">;
+    readonly searchbox: TagElement<"input">;
 
     private dragEnter: EventTarget | null;
     private tree: BranchEl;
@@ -133,7 +134,8 @@ export class NotebookList extends Disposable {
         });
         this.tree = new BranchEl(dispatcher, treeState);
 
-        this.el = div(['notebooks-list'], [div(['tree-view'], [this.tree.el])])
+        this.searchbox = textbox(['searchbox'], 'search');
+        this.el = div(['notebooks-list'], [this.searchbox, div(['tree-view'], [this.tree.el])])
             .listener("contextmenu", evt => NotebookListContextMenu.get(dispatcher).showFor(evt));
 
         // Drag n' drop!
@@ -164,6 +166,9 @@ export class NotebookList extends Disposable {
                 removed.forEach(path => treeState.removePath(path))
             }
         });
+
+        // setup searchbox
+        this.searchbox.addEventListener("input", evt => this.tree.filter(this.searchbox.value));
 
         // we're ready to request the notebooks list now!
         dispatcher.requestNotebookList()
@@ -355,6 +360,12 @@ export class BranchEl extends Disposable {
         this.branchEl.focus()
     }
 
+    filter(searchStr: string): boolean {
+        const childrenFound = this.children.map(child => child.filter(searchStr)).find(v => v) || false;
+        this.el.hidden = !childrenFound;
+        return childrenFound;
+    }
+
     private addChild(node: Branch | Leaf) {
         let child: BranchEl | LeafEl;
 
@@ -473,6 +484,12 @@ export class LeafEl extends Disposable {
     focus() {
         this.leafEl.focus()
     }
+
+    filter(searchStr: string): boolean {
+        const isMatch = this.path.includes(searchStr);
+        this.el.hidden = !isMatch;
+        return isMatch;
+    }    
 
     private getEl(leaf: Leaf) {
         return a(['name'], `notebooks/${leaf.fullPath}`, [span([], [leaf.value])], { preventNavigate: true })
