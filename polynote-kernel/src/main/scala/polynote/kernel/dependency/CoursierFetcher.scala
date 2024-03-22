@@ -1,10 +1,5 @@
 package polynote.kernel.dependency
 
-import java.io.{File, FileOutputStream, IOException}
-import java.net.URI
-import java.nio.file.{Files, Path, Paths}
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
 import cats.data.Validated
 import cats.instances.either._
 import cats.instances.list._
@@ -14,12 +9,9 @@ import coursier.cache.{ArtifactError, Cache, CacheLogger, FileCache}
 import coursier.core._
 import coursier.credentials.{DirectCredentials, Credentials => CoursierCredentials}
 import coursier.error.ResolutionError
-import coursier.error.conflict.UnsatisfiedRule
-import coursier.graph.ReverseModuleTree
 import coursier.ivy.IvyRepository
 import coursier.params.ResolutionParams
-import coursier.params.rule.Rule
-import coursier.util.{Artifact => CoursierArtifact, EitherT, ModuleMatchers, Sync}
+import coursier.util.{EitherT, ModuleMatchers, Sync, Artifact => CoursierArtifact}
 import coursier.{Artifacts, Attributes, Dependency, MavenRepository, Module, ModuleName, Organization, Resolve}
 import polynote.config.{RepositoryConfig, ivy, maven, Credentials => CredentialsConfig}
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask}
@@ -30,6 +22,12 @@ import polynote.kernel.util.{DownloadableFile, DownloadableFileProvider, LocalFi
 import zio.blocking.{Blocking, effectBlocking}
 import zio.stream.ZStream
 import zio.{RIO, Task, UIO, URIO, ZIO, ZManaged}
+
+import java.io.{File, FileOutputStream, IOException}
+import java.net.URI
+import java.nio.file.{Files, Path, Paths}
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
 import scala.concurrent.ExecutionContext
 
 object CoursierFetcher {
@@ -262,15 +260,29 @@ object CoursierFetcher {
   }
 
   // coursier doesn't have instances for ZIO built in
-  implicit def zioSync[R]: Sync[RIO[R, ?]] = new Sync[RIO[R, ?]] {
-    def delay[A](a: => A): RIO[R, A] = ZIO.effect(a)
-    def handle[A](a: RIO[R, A])(f: PartialFunction[Throwable, A]): RIO[R, A] = a.catchSome(f andThen (a => ZIO.succeed(a)))
-    def fromAttempt[A](a: Either[Throwable, A]): RIO[R, A] = ZIO.fromEither(a)
-    def gather[A](elems: Seq[RIO[R, A]]): RIO[R, Seq[A]] = ZIO.collectAllParN(10)(elems)
-    def point[A](a: A): RIO[R, A] = ZIO.succeed(a)
-    def bind[A, B](elem: RIO[R, A])(f: A => RIO[R, B]): RIO[R, B] = elem.flatMap(f)
-
-    def schedule[A](pool: ExecutorService)(f: => A): RIO[R, A] = ZIO.effect(f).on {
+  // Dont know how to make this generic for ArtifactTask & OuterTask.
+  implicit def zioSyncArtifact: Sync[ArtifactTask] = new Sync[ArtifactTask]{
+    def delay[A](a: => A): ArtifactTask[A] = ZIO.effect(a)
+    def handle[A](a: ArtifactTask[A])(f: PartialFunction[Throwable, A]): ArtifactTask[A] = a.catchSome(f andThen (a => ZIO.succeed(a)))
+    def fromAttempt[A](a: Either[Throwable, A]): ArtifactTask[A] = ZIO.fromEither(a)
+    def gather[A](elems: Seq[ArtifactTask[A]]): ArtifactTask[Seq[A]] = ZIO.collectAllParN(10)(elems)
+    def point[A](a: A): ArtifactTask[A]  = ZIO.succeed(a)
+    def bind[A,B](elem: ArtifactTask[A])(f: A => ArtifactTask[B]): ArtifactTask[B] = elem.flatMap(f)
+    def schedule[A](pool: ExecutorService)(f: => A): ArtifactTask[A] = ZIO.effect(f).on {
+      pool match {
+        case pool: ExecutionContext => pool
+        case pool => ExecutionContext.fromExecutorService(pool)
+      }
+    }
+  }
+  implicit def zioSyncOuter: Sync[OuterTask] = new Sync[OuterTask]{
+    def delay[A](a: => A): OuterTask[A] = ZIO.effect(a)
+    def handle[A](a: OuterTask[A])(f: PartialFunction[Throwable, A]): OuterTask[A] = a.catchSome(f andThen (a => ZIO.succeed(a)))
+    def fromAttempt[A](a: Either[Throwable, A]): OuterTask[A] = ZIO.fromEither(a)
+    def gather[A](elems: Seq[OuterTask[A]]): OuterTask[Seq[A]] = ZIO.collectAllParN(10)(elems)
+    def point[A](a: A): OuterTask[A]  = ZIO.succeed(a)
+    def bind[A,B](elem: OuterTask[A])(f: A => OuterTask[B]): OuterTask[B] = elem.flatMap(f)
+    def schedule[A](pool: ExecutorService)(f: => A): OuterTask[A] = ZIO.effect(f).on {
       pool match {
         case pool: ExecutionContext => pool
         case pool => ExecutionContext.fromExecutorService(pool)

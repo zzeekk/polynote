@@ -18,7 +18,7 @@ val sparkHome: SettingKey[String] = settingKey("Location of specific Spark insta
 
 
 val versions = new {
-  val coursier   = "2.0.0-RC5-6"
+  val coursier   = "2.1.9"
   val zio        = "1.0.11"
 }
 
@@ -40,14 +40,14 @@ lazy val nativeLibraryPath = {
 }
 
 val distBuildDir = file(".") / "target" / "dist" / "polynote"
-//val scalaVersions = Seq("2.11.12", "2.12.15", "2.13.12")
-val scalaVersions = Seq("2.12.15", "2.13.12")
+//val scalaVersions = Seq("2.11.12", "2.12.15", "2.13.6")
+val scalaVersions = Seq("2.12.18", "2.13.12")
 lazy val scalaBinaryVersions = scalaVersions.map {
   ver => ver.split('.').take(2).mkString(".")
 }.distinct
 
 val commonSettings = Seq(
-  scalaVersion := "2.12.15",
+  scalaVersion := scalaVersions.head,
   crossScalaVersions := scalaVersions,
   organization := "org.polynote",
   publishMavenStyle := true,
@@ -77,18 +77,20 @@ val commonSettings = Seq(
   Test / javaOptions += s"-Djava.library.path=$nativeLibraryPath",
   libraryDependencies ++= Seq(
     "org.scalatest" %% "scalatest" % "3.0.8" % "test",
-    "org.scalacheck" %% "scalacheck" % "1.14.0" % "test"
+    "org.scalacheck" %% "scalacheck" % "1.14.0" % "test",
   ),
   assembly / assemblyMergeStrategy := {
     case PathList("META-INF", "CHANGES") => MergeStrategy.discard
     case PathList("coursier", "shaded", xs @ _*) => MergeStrategy.first // coursier shades some of the same classes. assembly somehow can't dedupe even though they seem identical to me.
     case PathList(_, "BuildInfo$.class") => MergeStrategy.discard
+    case x if x.endsWith("module-info.class") => MergeStrategy.discard
+    case x if x.contains("META-INF/sisu/javax.inject.Named") => MergeStrategy.discard
     case x =>
       val oldStrategy = (assembly / assemblyMergeStrategy).value
       oldStrategy(x)
   },
-  assembly / assemblyOption := {
-    (assembly / assemblyOption).value.copy(includeScala = false)
+  assembly / assemblyOption ~= {
+    _.withIncludeScala(false)
   },
   Global / cancelable := true,
   addCompilerPlugin("org.typelevel" %% "kind-projector" % "0.10.3"),
@@ -112,18 +114,9 @@ val commonSettings = Seq(
   },
   scalacOptions += "-deprecation",
   assembly / test := {},
-  circeVersion := {
-    scalaBinaryVersion.value match {
-      case "2.13" | "2.12" => "0.12.2"
-      case "2.11"          => "0.12.0-M3"
-    }
-  },
-  circeYamlVersion := {
-    scalaBinaryVersion.value match {
-      case "2.13" | "2.12" => "0.12.0"
-      case "2.11"          => "0.11.0-M1"
-    }
-  }
+  circeVersion := "0.12.2",
+  circeYamlVersion := "0.12.0",
+  serverConnectionType := ConnectionType.Tcp
 )
 
 lazy val `polynote-macros` = project.settings(
@@ -135,16 +128,16 @@ lazy val `polynote-macros` = project.settings(
 )
 
 lazy val `polynote-runtime` = project.settings(
-  commonSettings,
-  scalacOptions ++= Seq(
-    "-language:experimental.macros"
-  ),
-  libraryDependencies ++= Seq(
-    "black.ninia" % "jep" % "4.0.0",
-    "org.scala-lang" % "scala-reflect" % scalaVersion.value % "provided"
-  ),
-  distFiles := Seq(assembly.value)
-).enablePlugins(BuildInfoPlugin)
+    commonSettings,
+    scalacOptions ++= Seq(
+      "-language:experimental.macros"
+    ),
+    libraryDependencies ++= Seq(
+      "black.ninia" % "jep" % "4.0.0",
+      "org.scala-lang" % "scala-reflect" % scalaVersion.value % "provided"
+    ),
+    distFiles := Seq(assembly.value)
+  ).enablePlugins(BuildInfoPlugin)
   .settings(
     buildInfoKeys := Seq[BuildInfoKey](
       name,
@@ -176,15 +169,15 @@ val `polynote-kernel` = project.settings(
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "test",
-    "org.scalameta" % "semanticdb-scalac-core" % "4.6.0" cross CrossVersion.full,
+    "org.scalameta" % "semanticdb-scalac-core" % "4.9.2" cross CrossVersion.full,
     "dev.zio" %% "zio" % versions.zio,
     "dev.zio" %% "zio-streams" % versions.zio,
     "org.scodec" %% "scodec-core" % "1.11.4",
     "io.get-coursier" %% "coursier" % versions.coursier,
     "io.get-coursier" %% "coursier-cache" % versions.coursier,
     "io.github.classgraph" % "classgraph" % "4.8.47",
-    "org.scala-lang.modules" %% "scala-collection-compat" % "2.1.1",
-    "org.scala-lang.modules" %% "scala-java8-compat" % "0.9.0",
+    "org.scala-lang.modules" %% "scala-collection-compat" % "2.11.0",
+    "org.scala-lang.modules" %% "scala-java8-compat" % "1.0.2",
     "io.circe" %% "circe-yaml" % circeYamlVersion.value,
     "io.circe" %% "circe-generic" % circeVersion.value,
     "io.circe" %% "circe-generic-extras" % circeVersion.value,
@@ -217,9 +210,19 @@ val `polynote-server` = project.settings(
 ).dependsOn(`polynote-runtime` % "provided", `polynote-runtime` % "test", `polynote-kernel` % "provided", `polynote-kernel` % "test->test")
 
 val sparkVersions = Map(
-  "2.11" -> "2.1.1",
-  "2.12" -> "3.1.2",
-  "2.13" -> "3.2.1"
+  "2.12" -> "3.4.2",
+  "2.13" -> "3.4.2"
+)
+
+// keep expected checksums here. This has two benefits over checking the sha512sum from the archive:
+// 1. We'll know if anything changes in the archive
+// 2. Spark's checksums are generated with gpg rather than sha512sum up until a certain version, so they're a pain to verify
+//    See https://issues.apache.org/jira/browse/SPARK-30683
+// To add to this list, download the tarball for the new version from the apache repo and run `sha512sum <file>.tgz`
+val sparkChecksums = Map(
+  "2.1.1" -> "4b6427ca6dc6f888b21bff9f9a354260af4a0699a1f43caabf58ae6030951ee5fa8b976497aa33de7e4ae55609d47a80bfe66dfc48c79ea28e3e5b03bdaaba11",
+  "3.1.2" -> "ba47e074b2a641b23ee900d4e28260baa250e2410859d481b38f2ead888c30daea3683f505608870148cf40f76c357222a2773f1471e7342c622e93bf02479b7",
+  "3.2.1" -> "2ec9f1cb65af5ee7657ca83a1abaca805612b8b3a1d8d9bb67e317106025c81ba8d44d82ad6fdb45bbe6caa768d449cd6a4945ec050ce9390f806f46c5cb1397"
 )
 
 // keep expected checksums here. This has two benefits over checking the sha512sum from the archive:
@@ -339,10 +342,9 @@ lazy val `polynote-spark` = project.settings(
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided"
   ),
-  assembly / assemblyOption := {
-    (assembly / assemblyOption).value.copy(
-      includeScala = false,
-      prependShellScript = Some(
+  assembly / assemblyOption ~= {
+    _.withIncludeScala(false)
+      .withPrependShellScript(Some(
         IO.read(file(".") / "scripts/polynote").linesIterator.toSeq
       ))
   },
@@ -413,8 +415,8 @@ val dist = Command.command(
 }
 
 lazy val polynote = project.in(file(".")).aggregate(`polynote-env`, `polynote-runtime`, `polynote-spark-runtime`, `polynote-kernel`, `polynote-server`, `polynote-spark`)
-    .settings(
-      commonSettings,
-      commands ++= Seq(dist)
-    )
+  .settings(
+    commonSettings,
+    commands ++= Seq(dist)
+  )
 
