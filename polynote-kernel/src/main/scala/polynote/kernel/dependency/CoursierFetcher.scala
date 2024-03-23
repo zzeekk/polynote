@@ -114,17 +114,7 @@ object CoursierFetcher {
 
     lazy val rootModules = coursierDeps.map(_.module).toSet
 
-    // need to do some magic on the default repositories, because the sax parser for maven poms don't work
-    val mavenRepository = classOf[MavenRepository]
-    val usePom = mavenRepository.getDeclaredField("useSaxParser")
-    usePom.setAccessible(true)
-
-    val repos = (repositories ++ Resolve(cache).repositories).map {
-      case maven: MavenRepository =>
-        usePom.set(maven, false)
-        maven
-      case other => other
-    }
+    val repos = (repositories ++ Resolve(cache).repositories)
 
     def recover(err: Throwable): ArtifactTask[Resolution] = err match {
       case err: ResolutionError.Several =>
